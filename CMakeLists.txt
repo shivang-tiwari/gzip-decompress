@@ -7,6 +7,10 @@ project(Gzip)
 
 set(CMAKE_CXX_STANDARD 23)
 add_compile_options(-Wall -Wextra)
+
+set(CMAKE_C_FLAGS_RELEASE "-O3 -DNDEBUG")
+set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG")
+
 set(CMAKE_COMPILE_WARNING_AS_ERROR ON)
 
 

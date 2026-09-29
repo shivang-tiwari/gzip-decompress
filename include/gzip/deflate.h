@@ -1,4 +1,6 @@
 
+#pragma once
+
 #include <iostream>
 #include <print>
 #include <algorithm>
@@ -39,6 +41,9 @@ class Deflate {
                 std::println(stderr, "Error: Block corrupted");
                 return false;
             }
+            uint32_t CRC32, ISIZE;
+            std::vector<uint8_t> footer_bytes = Utils::StreamUtils::read_n_bytes(input, sizeof(CRC32) + sizeof(ISIZE));
+            Utils::BufferUtils::deserialize((const char *)footer_bytes.data(), CRC32, ISIZE);
         }
         return true;
     }
@@ -49,10 +54,10 @@ class Deflate {
 
         // -1 if no bit left
         int get_next() {
-            if(input.peek() == std::istream::traits_type::eof()){
-                return -1;
-            }
             if (available_size == 0) {
+                if(input.peek() == std::istream::traits_type::eof()){
+                    return -1;
+                }
                 int val = input.get();
                 next_byte = static_cast<uint8_t>(val);
                 available_size = 8;
@@ -121,15 +126,15 @@ class Deflate {
         protected:
         std::ostream& output;
         int write_ptr = 0;
-        char buffer[SIZE];
+        char buffer[SIZE] = {0};
 
     };
 
     struct canonical_huffman_decoder {
         void init(const std::vector<int> &code_lengths){
             int max_len = *std::max_element(code_lengths.begin(), code_lengths.end());
-            code.resize(1 << max_len, -1);
-            length.resize(1 << max_len, 0);
+            code.assign(1 << max_len, -1);
+            length.assign(1 << max_len, 0);
 
             std::vector<int> bl_count(1 + max_len), next_code(1 + max_len);
             for(int x : code_lengths){

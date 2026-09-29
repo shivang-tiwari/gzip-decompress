@@ -34,10 +34,7 @@ int main(int argc, char* argv[]) {
 
     Gzip::Deflate deflate;
 
-    if(!deflate.decompress(infile, outfile)){
-        std::cerr << "Decompress failed" << std::endl;
-        return 1;
-    }
+    deflate.decompress(infile, outfile);
 
     return 0;
 }

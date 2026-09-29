@@ -35,29 +35,21 @@ class Deflate {
         fixed_distance_decoder.init(distance_code_lengths);
     }
 
-    bool decompress(std::istream& input, std::ostream& output){
+    void decompress(std::istream& input, std::ostream& output){
         while(input.peek() != std::istream::traits_type::eof()){
-            if(!decompress_block(input, output)){
-                std::println(stderr, "Error: Block corrupted");
-                return false;
-            }
+            decompress_block(input, output);
             uint32_t CRC32, ISIZE;
             std::vector<uint8_t> footer_bytes = Utils::StreamUtils::read_n_bytes(input, sizeof(CRC32) + sizeof(ISIZE));
             Utils::BufferUtils::deserialize((const char *)footer_bytes.data(), CRC32, ISIZE);
         }
-        return true;
     }
     protected:
 
     struct bit_reader {
         bit_reader(std::istream& aInput) : input(aInput) { }
 
-        // -1 if no bit left
         int get_next() {
             if (available_size == 0) {
-                if(input.peek() == std::istream::traits_type::eof()){
-                    return -1;
-                }
                 int val = input.get();
                 next_byte = static_cast<uint8_t>(val);
                 available_size = 8;
@@ -221,7 +213,7 @@ class Deflate {
     canonical_huffman_decoder dynamic_literal_decoder;
     canonical_huffman_decoder dynamic_distance_decoder;
 
-    bool decompress_block(std::istream& input, std::ostream& output){
+    void decompress_block(std::istream& input, std::ostream& output){
         bit_reader br(input);
         ring_buffer_writer writer(output);
         while(true){
@@ -230,47 +222,39 @@ class Deflate {
             bool BTYPE_1 = br.get_next();
 
             if(BTYPE_0 == 0 && BTYPE_1 == 0){
-                if(!no_compress_decompression(br, writer)) return false;
+                no_compress_decompression(br, writer);
             }
             else if(BTYPE_0 == 1 && BTYPE_1 == 0){
                 // fixed_huffman
-                if(!decompress_huffman(br, fixed_literal_decoder, fixed_distance_decoder, writer)) return false;
+                decompress_huffman(br, fixed_literal_decoder, fixed_distance_decoder, writer);
             }
             else if(BTYPE_0 == 0 && BTYPE_1 == 1){
                 // dynamic huffman
-                if(!get_dynamic_huffman_decoders(br, dynamic_literal_decoder, dynamic_distance_decoder)) return false;
-                if(!decompress_huffman(br, dynamic_literal_decoder, dynamic_distance_decoder, writer)) return false;
-            }
-            else{
-                return false;
+                get_dynamic_huffman_decoders(br, dynamic_literal_decoder, dynamic_distance_decoder);
+                decompress_huffman(br, dynamic_literal_decoder, dynamic_distance_decoder, writer);
             }
             if(BFINAL) break;
         }
-        return true;
     }
 
-    bool no_compress_decompression(bit_reader &br, ring_buffer_writer& output){
+    void no_compress_decompression(bit_reader &br, ring_buffer_writer& output){
         uint16_t len, nlen;
         std::vector<uint8_t> len_bytes = br.read_n_bytes(4);
         Utils::BufferUtils::deserialize((const char *)len_bytes.data(), len, nlen);
         for(uint16_t i = 0;i < len;i++){
             output.write_one(static_cast<char>(br.get_next_byte()));
         }
-        return true;
     }
 
-    bool decompress_huffman(bit_reader &br, canonical_huffman_decoder &literal_decoder, canonical_huffman_decoder &distance_decoder, 
+    void decompress_huffman(bit_reader &br, canonical_huffman_decoder &literal_decoder, canonical_huffman_decoder &distance_decoder, 
         ring_buffer_writer& output){
         while(true){
             int next_symbol = literal_decoder.get_next_symbol(br);
-            if(next_symbol < 0){
-                return false;
-            }
-            else if(next_symbol < 256){
+            if(next_symbol < 256){
                 output.write_one(static_cast<char>(next_symbol));
             }
             else if(next_symbol == 256){
-                return true;
+                return;
             }
             else if(next_symbol < 286){
                 int len = base_length[next_symbol] + br.get_next_bits(extra_length_bits[next_symbol]);
@@ -278,13 +262,10 @@ class Deflate {
                 int distance = base_distance[distance_symbol] + br.get_next_bits(extra_distance_bits[distance_symbol]);
                 output.repeat(distance, len);
             }
-            else{
-                return false;
-            }
         }
     }
 
-    bool get_dynamic_huffman_decoders(bit_reader &br, canonical_huffman_decoder &literal_decoder, 
+    void get_dynamic_huffman_decoders(bit_reader &br, canonical_huffman_decoder &literal_decoder, 
         canonical_huffman_decoder &distance_decoder){
 
         int HLIT  = br.get_next_bits(5); 
@@ -309,13 +290,11 @@ class Deflate {
 
         int total_lengths = num_lit_codes + num_dist_codes;
         std::vector<int> all_lengths;
+        all_lengths.reserve(total_lengths);
 
         while((int)all_lengths.size() < total_lengths){
             int next_symbol = code_huffman_tree.get_next_symbol(br);
-            if(next_symbol < 0){
-                return false;
-            }
-            else if (next_symbol <= 15) {
+            if (next_symbol <= 15) {
                 all_lengths.push_back(next_symbol);
             } 
             else if (next_symbol == 16) {
@@ -331,9 +310,6 @@ class Deflate {
                 int repeat = 11 + br.get_next_bits(7);
                 while (repeat--) all_lengths.push_back(0);
             }
-            else{
-                return false;
-            }
         }
 
         std::vector<int> lit_lens(all_lengths.begin(), all_lengths.begin() + num_lit_codes);
@@ -341,8 +317,6 @@ class Deflate {
 
         literal_decoder.init(lit_lens);
         distance_decoder.init(dist_lens);
-
-        return true;
     }
 
 };
